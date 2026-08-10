@@ -1,100 +1,100 @@
-# vinext-starter
+# TailorLocal ATS
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+I built TailorLocal ATS to create role-specific resumes without uploading personal information to a cloud AI service. I connect the app directly to a model running on my own computer, provide my current resume and a job description, and export the tailored result as a clean PDF.
 
-## Prerequisites
+## Why I built it
 
-- Node.js `>=22.13.0`
+I wanted a resume-tailoring workflow that keeps sensitive career information local. The browser talks directly to Ollama, LM Studio, or another OpenAI-compatible local server. There is no hosted model API, account system, or resume database in the generation flow.
 
-## Quick Start
+## What it does
 
-```bash
+- I can upload a PDF, DOCX, TXT, or Markdown resume.
+- I can paste or upload a job description.
+- I can connect Ollama or a local OpenAI-compatible server.
+- The local model rewrites and reorganizes only facts supported by my source resume.
+- The app performs additional local revision passes when truthful improvements can raise the score.
+- I can compare before-and-after ATS compatibility scores and review the scoring breakdown.
+- The job description is locked to the generated result so a different role cannot silently change its ATS metrics.
+- I can edit the generated resume before downloading it.
+- The PDF uses a selectable-text, single-column layout with standard section headings.
+- Long resumes paginate cleanly without cutting content off.
+
+## ATS scoring
+
+I use a deterministic local scoring rubric based on keyword alignment, section completeness, impact wording, contact readability, and parseable formatting. I use the same job-description snapshot for generation and for every score shown with that result.
+
+The score is a practical compatibility estimate, not a guaranteed score from every commercial ATS. Different employers and ATS products use private ranking systems that are not available to this project.
+
+## Local setup
+
+I use Node.js 22.13 or newer and a local model server.
+
+```powershell
 npm install
 npm run dev
+```
+
+I then open [http://localhost:3000](http://localhost:3000).
+
+## Ollama setup
+
+I can install and start Ollama, then download a model such as Llama 3.1:
+
+```powershell
+ollama pull llama3.1
+ollama serve
+```
+
+Inside TailorLocal, I keep the Ollama endpoint set to:
+
+```text
+http://127.0.0.1:11434
+```
+
+If Ollama blocks browser requests, I restart it with the local site origin allowed:
+
+```powershell
+$env:OLLAMA_ORIGINS="http://localhost:3000"
+ollama serve
+```
+
+## LM Studio and compatible servers
+
+I start the local OpenAI-compatible server and use its base URL in the app. The default LM Studio address is:
+
+```text
+http://127.0.0.1:1234
+```
+
+## My workflow
+
+1. I upload my existing resume.
+2. I paste or upload the target job description.
+3. I connect my local model and select it.
+4. I generate the tailored resume.
+5. I review the ATS comparison and edit any wording I want to change.
+6. I download the final PDF.
+7. I select **Start over** before using a different job description.
+
+## Privacy model
+
+My resume and job description remain in the browser during the session. Generation requests go to the local endpoint I configure. I do not need an OpenAI API key or another hosted-model key to use the app.
+
+## Validation
+
+I use the following commands before publishing changes:
+
+```powershell
 npm run build
+npm test
 ```
 
-This starter does not use `wrangler.jsonc`.
+## Main technologies
 
-## Included Shape
-
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
-```
-
-## Optional Dispatch-Owned ChatGPT Sign-In
-
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+- React 19
+- TypeScript
+- vinext and Vite
+- jsPDF
+- PDF.js
+- Mammoth
+- Ollama or another local model server

@@ -39,3 +39,12 @@ yarn-error.log*
 /outputs/
 /work/
 *.tsbuildinfo
+
+# Python backend
+/backend/.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/

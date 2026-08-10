@@ -7,10 +7,14 @@
   },
   "scripts": {
     "dev": "vinext dev",
+    "dev:web": "vinext dev",
+    "dev:backend": "backend\\.venv\\Scripts\\python.exe -m uvicorn tailorlocal_backend.main:app --app-dir backend/src --host 127.0.0.1 --port 8000",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "test": "npm run test:backend && npm run test:web",
+    "test:backend": "backend\\.venv\\Scripts\\python.exe -m pytest backend/tests",
+    "test:web": "npm run build && node --test tests/*.test.mjs",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern .vinext --ignore-pattern .wrangler --ignore-pattern work --ignore-pattern backend/.venv --ignore-pattern public/pdf.worker.min.mjs",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

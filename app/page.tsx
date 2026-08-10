@@ -37,31 +37,17 @@ import {
   type Experience,
   type ResumeDocument,
 } from "./pdf-export";
+import {
+  generateTailoredResume,
+  listLocalModels,
+  PYTHON_BACKEND_URL,
+  scoreTailoredResume,
+  type AtsAnalysis,
+  type GenerationResult,
+  type Provider,
+} from "./backend-client";
 
-type Provider = "ollama" | "openai";
-
-type AtsAnalysis = {
-  score: number;
-  matchedKeywords: string[];
-  missingKeywords: string[];
-  improvements: string[];
-  breakdown: Array<{
-    label: string;
-    score: number;
-    maxScore: number;
-    detail: string;
-  }>;
-};
-
-type ModelGenerationResult = {
-  resume: ResumeDocument;
-  analysis: AtsAnalysis;
-};
-
-type GenerationResult = ModelGenerationResult & {
-  beforeAnalysis: AtsAnalysis;
-  jobDescription: string;
-};
+type ModelGenerationResult = Pick<GenerationResult, "resume" | "analysis">;
 
 type FileDropProps = {
   id: string;
@@ -81,6 +67,8 @@ const PROVIDER_DEFAULTS: Record<Provider, string> = {
 const ATS_TARGET_SCORE = 80;
 const MAX_REFINEMENT_PASSES = 2;
 
+// Reference prompt retained for migration parity; Python owns the active prompt path.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const SYSTEM_PROMPT = `You are a meticulous senior resume writer and ATS optimization editor. Return one valid JSON object and nothing else.
 
 NON-NEGOTIABLE RULES:
@@ -110,6 +98,8 @@ OUTPUT SCHEMA:
   }
 }`;
 
+// Reference shape retained for migration parity; Python owns the active scoring path.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const EMPTY_RESUME: ResumeDocument = {
   name: "",
   headline: "",
@@ -228,6 +218,7 @@ function normalizeResult(raw: unknown): ModelGenerationResult {
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function parseModelJson(value: string): ModelGenerationResult {
   const withoutFence = value.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
   const start = withoutFence.indexOf("{");
@@ -340,6 +331,7 @@ function resumeAsText(resume: ResumeDocument): string {
   ].join(" \n");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function calculateAtsScore(
   resume: ResumeDocument,
   jobDescription: string,
@@ -512,6 +504,7 @@ function calculateAtsScore(
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function sourceSupportedKeywords(keywords: string[], sourceText: string): string[] {
   const sourceTokens = new Set(tokensFor(sourceText).map(stemToken));
   return keywords.filter((keyword) => {
@@ -880,15 +873,11 @@ export default function Home() {
   const [generating, setGenerating] = useState(false);
   const [generationStage, setGenerationStage] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [scoreRefreshing, setScoreRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [origin, setOrigin] = useState("this page");
-  const inputBeforeAnalysis = useMemo(
-    () => resumeText && jobText
-      ? calculateAtsScore(EMPTY_RESUME, jobText, { sourceText: resumeText })
-      : null,
-    [resumeText, jobText],
-  );
-  const beforeAnalysis = result?.beforeAnalysis ?? inputBeforeAnalysis;
+  const scoreTimer = useRef<number | null>(null);
+  const scoreRequest = useRef(0);
+  const beforeAnalysis = result?.beforeAnalysis ?? null;
   const appliedOptimizations = useMemo(
     () => result ? appliedOptimizationLabels(beforeAnalysis, result.analysis) : [],
     [beforeAnalysis, result],
@@ -898,7 +887,9 @@ export default function Home() {
     [result],
   );
 
-  useEffect(() => setOrigin(window.location.origin), []);
+  useEffect(() => () => {
+    if (scoreTimer.current !== null) window.clearTimeout(scoreTimer.current);
+  }, []);
   function changeProvider(next: Provider) {
     setProvider(next);
     setEndpoint(PROVIDER_DEFAULTS[next]);
@@ -913,20 +904,14 @@ export default function Home() {
     setError("");
     setConnected(false);
     try {
-      const base = endpoint.trim().replace(/\/$/, "");
-      const response = await fetch(provider === "ollama" ? `${base}/api/tags` : `${base}/v1/models`);
-      if (!response.ok) throw new Error(`Local server responded with ${response.status}.`);
-      const data = await response.json() as { models?: Array<{ name?: string }>; data?: Array<{ id?: string }> };
-      const nextModels = provider === "ollama"
-        ? (data.models ?? []).map((item) => item.name ?? "").filter(Boolean)
-        : (data.data ?? []).map((item) => item.id ?? "").filter(Boolean);
+      const nextModels = await listLocalModels({ provider, endpoint });
       if (!nextModels.length) throw new Error("Connected, but no local models were found.");
       setModels(nextModels);
       setModel((current) => (nextModels.includes(current) ? current : nextModels[0]));
       setConnected(true);
     } catch (connectionError) {
       const message = connectionError instanceof Error ? connectionError.message : "Could not connect.";
-      setError(`${message} Make sure the local server is running and allows requests from ${origin}.`);
+      setError(`${message} Make sure the Python backend and local model server are running.`);
     } finally {
       setConnecting(false);
     }
@@ -950,138 +935,62 @@ export default function Home() {
     }
   }
 
-  async function callLocalModel(prompt: string): Promise<string> {
-    const base = endpoint.trim().replace(/\/$/, "");
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 5 * 60 * 1000);
-    try {
-      if (provider === "ollama") {
-        const response = await fetch(`${base}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-          body: JSON.stringify({
-            model,
-            stream: false,
-            format: "json",
-            options: { temperature: 0.1, num_ctx: 16384, num_predict: 4096 },
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT },
-              { role: "user", content: prompt },
-            ],
-          }),
-        });
-        if (!response.ok) throw new Error(`Ollama returned ${response.status}: ${await response.text()}`);
-        const data = await response.json() as { message?: { content?: string }; response?: string };
-        return data.message?.content ?? data.response ?? "";
-      }
-
-      const payload = {
-        model,
-        temperature: 0.1,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: prompt },
-        ],
-      };
-      let response = await fetch(`${base}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({ ...payload, response_format: { type: "json_object" } }),
-      });
-      if (!response.ok && (response.status === 400 || response.status === 422)) {
-        response = await fetch(`${base}/v1/chat/completions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-          body: JSON.stringify(payload),
-        });
-      }
-      if (!response.ok) throw new Error(`Local server returned ${response.status}: ${await response.text()}`);
-      const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-      return data.choices?.[0]?.message?.content ?? "";
-    } finally {
-      window.clearTimeout(timeout);
-    }
-  }
-
   async function generateResume() {
     if (!resumeText || !jobText || !connected || !model) return;
-    const generationResumeText = resumeText;
-    const generationJobDescription = jobText;
-    const generationBeforeAnalysis = calculateAtsScore(
-      EMPTY_RESUME,
-      generationJobDescription,
-      { sourceText: generationResumeText },
-    );
     setGenerating(true);
-    setGenerationStage("Drafting the strongest truthful version…");
+    setGenerationStage("Python backend is drafting and refining…");
     setError("");
     try {
-      const prompt = `Create the strongest truthful ATS resume for this specific role. Aim for ${ATS_TARGET_SCORE}+ using exact job-description terminology wherever the source resume supports the same capability. Reorder and rewrite for relevance, build complete standard sections, and make every supported bullet concise and impact-led. If ${ATS_TARGET_SCORE}+ cannot be reached without inventing facts, maximize truthful alignment and never fabricate.\n\n<SOURCE_RESUME>\n${generationResumeText}\n</SOURCE_RESUME>\n\n<JOB_DESCRIPTION>\n${generationJobDescription}\n</JOB_DESCRIPTION>`;
-      const raw = await callLocalModel(prompt);
-      const parsed = parseModelJson(raw);
-      let bestResult: GenerationResult = {
-        resume: parsed.resume,
-        analysis: calculateAtsScore(parsed.resume, generationJobDescription),
-        beforeAnalysis: generationBeforeAnalysis,
-        jobDescription: generationJobDescription,
-      };
-
-      for (let pass = 0; pass < MAX_REFINEMENT_PASSES && bestResult.analysis.score < ATS_TARGET_SCORE; pass += 1) {
-        setGenerationStage(`Optimizing toward ${ATS_TARGET_SCORE}+ · pass ${pass + 1} of ${MAX_REFINEMENT_PASSES}…`);
-        const safelySupported = sourceSupportedKeywords(bestResult.analysis.missingKeywords, generationResumeText).slice(0, 16);
-        const scoreBreakdown = bestResult.analysis.breakdown
-          .map((item) => `${item.label}: ${item.score}/${item.maxScore}`)
-          .join("; ");
-        const refinementPrompt = `Revise the current draft into a stronger, cleaner ATS resume for the same role. The local score is ${bestResult.analysis.score}/100; target ${ATS_TARGET_SCORE}+ while staying completely truthful.
-
-PRIORITIES:
-- Restore and prominently use these exact job terms because they are literally supported by the source: ${safelySupported.join(", ") || "none detected literally; identify only genuine semantic equivalents yourself"}.
-- Consider these other high-value terms only when the source clearly proves an equivalent capability: ${bestResult.analysis.missingKeywords.slice(0, 18).join(", ")}.
-- Improve the weakest scoring areas: ${scoreBreakdown}.
-- Strengthen the headline, summary, skills ordering, and action-led bullets. Preserve every factual identifier and every metric exactly.
-- Silently audit each sentence against the source. Delete any unsupported claim. Return only the required JSON object.
-
-<CURRENT_DRAFT>
-${JSON.stringify(bestResult.resume)}
-</CURRENT_DRAFT>
-
-<SOURCE_RESUME>
-${generationResumeText}
-</SOURCE_RESUME>
-
-<JOB_DESCRIPTION>
-${generationJobDescription}
-</JOB_DESCRIPTION>`;
-
-        try {
-          const refinedRaw = await callLocalModel(refinementPrompt);
-          const refined = parseModelJson(refinedRaw);
-          const candidate: GenerationResult = {
-            resume: refined.resume,
-            analysis: calculateAtsScore(refined.resume, generationJobDescription),
-            beforeAnalysis: generationBeforeAnalysis,
-            jobDescription: generationJobDescription,
-          };
-          if (candidate.analysis.score > bestResult.analysis.score) bestResult = candidate;
-        } catch {
-          break;
-        }
-      }
-
-      setResult(bestResult);
+      const generated = await generateTailoredResume({
+        provider,
+        endpoint,
+        model,
+        resumeText,
+        jobDescription: jobText,
+        targetScore: ATS_TARGET_SCORE,
+        maxRefinementPasses: MAX_REFINEMENT_PASSES,
+      });
+      setResult(generated);
     } catch (generationError) {
-      if (generationError instanceof DOMException && generationError.name === "AbortError") {
-        setError("The local model took longer than five minutes. Try a smaller model or shorter documents.");
-      } else {
-        setError(generationError instanceof Error ? generationError.message : "Generation failed.");
-      }
+      setError(generationError instanceof Error ? generationError.message : "Generation failed.");
     } finally {
       setGenerating(false);
       setGenerationStage("");
     }
+  }
+
+  function updateGeneratedResume(resume: ResumeDocument) {
+    const jobDescription = result?.jobDescription;
+    if (!jobDescription) return;
+    setResult((current) => current ? { ...current, resume } : current);
+    setScoreRefreshing(true);
+    const requestId = ++scoreRequest.current;
+    if (scoreTimer.current !== null) window.clearTimeout(scoreTimer.current);
+    scoreTimer.current = window.setTimeout(() => {
+      void scoreTailoredResume({ resume, jobDescription })
+        .then((analysis) => {
+          if (requestId !== scoreRequest.current) return;
+          setResult((current) => current && current.jobDescription === jobDescription
+            ? { ...current, resume, analysis }
+            : current);
+        })
+        .catch((scoreError) => {
+          if (requestId === scoreRequest.current) {
+            setError(scoreError instanceof Error ? scoreError.message : "The ATS score could not be refreshed.");
+          }
+        })
+        .finally(() => {
+          if (requestId === scoreRequest.current) setScoreRefreshing(false);
+        });
+    }, 350);
+  }
+
+  function startOver() {
+    scoreRequest.current += 1;
+    if (scoreTimer.current !== null) window.clearTimeout(scoreTimer.current);
+    scoreTimer.current = null;
+    setScoreRefreshing(false);
+    setResult(null);
   }
 
   async function exportPdf() {
@@ -1107,7 +1016,7 @@ ${generationJobDescription}
           <span className="brand-mark">TL</span>
           <span>TailorLocal</span>
         </a>
-        <div className="privacy-pill"><ShieldCheck size={16} /> Files stay in this browser</div>
+        <div className="privacy-pill"><ShieldCheck size={16} /> Files stay on this device</div>
         <a className="header-link" href="#how-it-works">How it works <ArrowRight size={14} /></a>
       </header>
 
@@ -1118,7 +1027,7 @@ ${generationJobDescription}
         </div>
         <div className="hero-copy">
           <p>Turn your real experience into a role-specific resume with your own local AI. No account, no cloud model, no resume database.</p>
-          <div className="local-route"><LockKeyhole size={16} /><span>Your browser</span><i /><Cpu size={16} /><span>Your local model</span></div>
+          <div className="local-route"><LockKeyhole size={16} /><span>Your browser</span><i /><Cpu size={16} /><span>Python backend + local model</span></div>
         </div>
       </section>
 
@@ -1131,7 +1040,7 @@ ${generationJobDescription}
 
           <div className="upload-grid">
             <div>
-              <label className="field-label">Current resume <span>required</span></label>
+              <p className="field-label">Current resume <span>required</span></p>
               <FileDrop
                 id="resume-upload"
                 title="Drop your resume"
@@ -1210,8 +1119,9 @@ ${generationJobDescription}
           <details className="connection-help" id="how-it-works">
             <summary>Connection help <ChevronDown size={14} /></summary>
             <div>
-              <p><strong>Ollama:</strong> Start Ollama, pull a model, and allow browser requests from <code>{origin}</code> if prompted.</p>
-              <p><strong>LM Studio:</strong> Open the Local Server tab, enable CORS, load a model, then start the server.</p>
+              <p><strong>Python:</strong> Start the TailorLocal backend at <code>{PYTHON_BACKEND_URL}</code>.</p>
+              <p><strong>Ollama:</strong> Start Ollama and pull a local instruction model.</p>
+              <p><strong>LM Studio:</strong> Open the Local Server tab, load a model, then start the server.</p>
               <p>For stronger resume output, use an instruction model with at least 8B parameters and a 16K context window.</p>
             </div>
           </details>
@@ -1234,7 +1144,7 @@ ${generationJobDescription}
               <h2>{result ? "Your tailored resume" : "Resume preview"}</h2>
             </div>
             <div className="preview-actions">
-              {result && <button type="button" className="reset-button" onClick={() => setResult(null)}><RotateCcw size={15} /> Start over</button>}
+              {result && <button type="button" className="reset-button" onClick={startOver}><RotateCcw size={15} /> Start over</button>}
               <button type="button" className="download-button" disabled={!result || exporting} onClick={() => void exportPdf()}>
                 {exporting ? <LoaderCircle className="spin" size={16} /> : <Download size={16} />}{exporting ? "Building PDF…" : "Download PDF"}
               </button>
@@ -1265,7 +1175,7 @@ ${generationJobDescription}
           <div className="paper-stage">
             <div className="paper-meta">
               <span><FileText size={14} /> US Letter · single column</span>
-              <span>{result ? "Click any line to edit" : "ATS-safe structure"}</span>
+              <span>{scoreRefreshing ? "Refreshing ATS score…" : result ? "Click any line to edit" : "ATS-safe structure"}</span>
             </div>
             {result && (
               <section className="ats-report" aria-label="ATS score breakdown">
@@ -1318,11 +1228,7 @@ ${generationJobDescription}
             {result ? (
               <ResumeEditor
                 resume={result.resume}
-                onChange={(resume) => setResult({
-                  ...result,
-                  resume,
-                  analysis: calculateAtsScore(resume, result.jobDescription),
-                })}
+                onChange={updateGeneratedResume}
               />
             ) : (
               <EmptyPreview />

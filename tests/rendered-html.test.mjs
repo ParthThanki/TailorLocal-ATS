@@ -38,9 +38,10 @@ test("server-renders the TailorLocal workspace", async () => {
   assert.doesNotMatch(html, /Your site is taking shape|Building your site/);
 });
 
-test("keeps generation and scoring tied to local inputs", async () => {
-  const [page, pdfExporter, packageJson] = await Promise.all([
+test("routes generation and scoring through the local Python backend", async () => {
+  const [page, backendClient, pdfExporter, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/backend-client.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/pdf-export.ts", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
@@ -48,9 +49,14 @@ test("keeps generation and scoring tied to local inputs", async () => {
   assert.match(packageJson, /"name": "tailorlocal-ats"/);
   assert.match(page, /127\.0\.0\.1:11434/);
   assert.match(page, /127\.0\.0\.1:1234/);
-  assert.match(page, /jobDescription: generationJobDescription/);
+  assert.match(page, /generateTailoredResume/);
+  assert.match(page, /scoreTailoredResume/);
   assert.match(page, /disabled=\{jobDescriptionLocked\}/);
-  assert.match(page, /result\.jobDescription/);
+  assert.doesNotMatch(page, /fetch\(`\$\{base\}\/api\/chat/);
+  assert.match(backendClient, /127\.0\.0\.1:8000/);
+  assert.match(backendClient, /"\/api\/models"/);
+  assert.match(backendClient, /"\/api\/generate"/);
+  assert.match(backendClient, /"\/api\/score"/);
   assert.match(pdfExporter, /new jsPDF/);
   await access(new URL("../public/pdf.worker.min.mjs", import.meta.url));
 });

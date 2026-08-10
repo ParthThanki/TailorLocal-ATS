@@ -874,6 +874,7 @@ export default function Home() {
   const [generationStage, setGenerationStage] = useState("");
   const [exporting, setExporting] = useState(false);
   const [scoreRefreshing, setScoreRefreshing] = useState(false);
+  const [howOpen, setHowOpen] = useState(false);
   const [error, setError] = useState("");
   const scoreTimer = useRef<number | null>(null);
   const scoreRequest = useRef(0);
@@ -890,6 +891,21 @@ export default function Home() {
   useEffect(() => () => {
     if (scoreTimer.current !== null) window.clearTimeout(scoreTimer.current);
   }, []);
+
+  useEffect(() => {
+    if (!howOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setHowOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [howOpen]);
+
   function changeProvider(next: Provider) {
     setProvider(next);
     setEndpoint(PROVIDER_DEFAULTS[next]);
@@ -1017,7 +1033,24 @@ export default function Home() {
           <span>TailorLocal</span>
         </a>
         <div className="privacy-pill"><ShieldCheck size={16} /> Files stay on this device</div>
-        <a className="header-link" href="#how-it-works">How it works <ArrowRight size={14} /></a>
+        <button
+          type="button"
+          className="header-link"
+          aria-haspopup="dialog"
+          aria-expanded={howOpen}
+          onClick={() => {
+            setHowOpen(true);
+            if (window.location.hash === "#how-it-works") {
+              window.history.replaceState(
+                window.history.state,
+                "",
+                `${window.location.pathname}${window.location.search}`,
+              );
+            }
+          }}
+        >
+          How it works <ArrowRight size={14} />
+        </button>
       </header>
 
       <section className="hero" id="top">
@@ -1116,7 +1149,7 @@ export default function Home() {
             </div>
           </label>
 
-          <details className="connection-help" id="how-it-works">
+          <details className="connection-help">
             <summary>Connection help <ChevronDown size={14} /></summary>
             <div>
               <p><strong>Python:</strong> Start the TailorLocal backend at <code>{PYTHON_BACKEND_URL}</code>.</p>
@@ -1236,6 +1269,58 @@ export default function Home() {
           </div>
         </section>
       </section>
+
+      {howOpen && (
+        <div className="how-modal-layer">
+          <button type="button" className="how-modal-scrim" onClick={() => setHowOpen(false)} aria-label="Close how it works" />
+          <section
+            className="how-modal"
+            id="how-it-works"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="how-it-works-title"
+            aria-describedby="how-it-works-description"
+          >
+            <div className="how-modal-top">
+              <span className="step-kicker">HOW IT WORKS</span>
+              <button type="button" className="how-close" onClick={() => setHowOpen(false)} aria-label="Close how it works">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="how-intro">
+              <h2 id="how-it-works-title">Three steps. One local workflow.</h2>
+              <p id="how-it-works-description">TailorLocal keeps the complete resume process on this device, from source documents to the final one-page PDF.</p>
+            </div>
+
+            <div className="how-grid">
+              <article className="how-card">
+                <div className="how-card-head"><span>01</span><FileText size={20} /></div>
+                <h3>Add the real source material</h3>
+                <p>Upload the current resume and paste the exact job description. The job description is locked to the generated result so its ATS score cannot silently change.</p>
+              </article>
+              <article className="how-card">
+                <div className="how-card-head"><span>02</span><Cpu size={20} /></div>
+                <h3>Run a model on this computer</h3>
+                <p>The local Python backend connects to Ollama or LM Studio, rewrites only source-supported facts, and performs truthful refinement passes.</p>
+              </article>
+              <article className="how-card">
+                <div className="how-card-head"><span>03</span><Download size={20} /></div>
+                <h3>Review, edit, and export</h3>
+                <p>Compare the before-and-after ATS score, edit any line, receive an updated score, and download a selectable-text resume fitted to one Letter page.</p>
+              </article>
+            </div>
+
+            <div className="how-route" aria-label="Local processing route">
+              <span><ShieldCheck size={15} /> Your browser</span>
+              <ArrowRight size={15} />
+              <span><Cpu size={15} /> Python backend</span>
+              <ArrowRight size={15} />
+              <span><Sparkles size={15} /> Local model</span>
+            </div>
+          </section>
+        </div>
+      )}
 
       <footer>
         <span><strong>TailorLocal</strong> — local by default.</span>

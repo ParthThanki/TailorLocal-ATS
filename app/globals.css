@@ -122,6 +122,9 @@ a:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--ink);
   font-size: 13px;
   font-weight: 650;
@@ -1667,6 +1670,189 @@ a:focus-visible {
   to { transform: rotate(360deg); }
 }
 
+.how-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  animation: modal-fade-in 160ms ease-out;
+}
+
+.how-modal-scrim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgba(10, 18, 29, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.how-modal {
+  position: relative;
+  z-index: 1;
+  width: min(1100px, 100%);
+  max-height: calc(100vh - 48px);
+  padding: 38px;
+  overflow-y: auto;
+  border: 1px solid var(--ink);
+  border-radius: 18px;
+  background: var(--cream);
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.42);
+  animation: modal-rise-in 180ms ease-out;
+}
+
+.how-modal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.how-modal-top .step-kicker {
+  margin: 0;
+}
+
+.how-close {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(18, 32, 51, 0.25);
+  border-radius: 50%;
+  background: #f3f0e8;
+  color: var(--ink);
+}
+
+.how-close:hover {
+  background: var(--lime);
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes modal-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+
+.how-intro {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 56px;
+  align-items: end;
+}
+
+.how-intro h2 {
+  margin: 0;
+  max-width: 560px;
+  color: var(--ink);
+  font-size: clamp(34px, 4vw, 58px);
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+}
+
+.how-intro p {
+  max-width: 600px;
+  margin: 0;
+  color: #566171;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.how-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 34px;
+}
+
+.how-card {
+  min-height: 218px;
+  padding: 24px;
+  border: 1px solid rgba(18, 32, 51, 0.22);
+  background: #f8f6ef;
+}
+
+.how-card:nth-child(2) {
+  background: #f3f7ea;
+}
+
+.how-card:nth-child(3) {
+  background: #fff5ef;
+}
+
+.how-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ink);
+}
+
+.how-card-head span {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
+.how-card-head svg {
+  color: #5e8321;
+}
+
+.how-card:nth-child(3) .how-card-head svg {
+  color: #d15d43;
+}
+
+.how-card h3 {
+  margin: 40px 0 10px;
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+}
+
+.how-card p {
+  margin: 0;
+  color: #606a78;
+  font-size: 12px;
+  line-height: 1.58;
+}
+
+.how-route {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 13px 16px;
+  border: 1px solid rgba(18, 32, 51, 0.18);
+  background: rgba(200, 255, 97, 0.13);
+  color: #4c5869;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.how-route span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.how-route > svg {
+  color: #8c949e;
+}
+
 footer {
   display: flex;
   justify-content: space-between;
@@ -1751,6 +1937,15 @@ footer strong {
     min-height: 800px;
   }
 
+  .how-modal {
+    padding: 32px 28px;
+  }
+
+  .how-intro {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
   .analysis-strip {
     grid-template-columns: 1fr 1.5fr 1.5fr;
   }
@@ -1822,6 +2017,42 @@ footer strong {
   .preview-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .how-modal-layer {
+    padding: 10px;
+  }
+
+  .how-modal {
+    max-height: calc(100vh - 20px);
+    padding: 24px 16px;
+    border-radius: 12px;
+  }
+
+  .how-intro h2 {
+    font-size: 38px;
+  }
+
+  .how-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .how-card {
+    min-height: 0;
+  }
+
+  .how-card h3 {
+    margin-top: 28px;
+  }
+
+  .how-route {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .how-route > svg {
+    align-self: center;
+    transform: rotate(90deg);
   }
 
   .reset-button,

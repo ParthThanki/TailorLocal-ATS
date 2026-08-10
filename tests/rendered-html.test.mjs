@@ -35,6 +35,7 @@ test("server-renders the TailorLocal workspace", async () => {
   assert.match(html, /Connect local AI/);
   assert.match(html, /Generate resume/);
   assert.match(html, /Resume preview/);
+  assert.match(html, /How it works/);
   assert.doesNotMatch(html, /Your site is taking shape|Building your site/);
 });
 
@@ -51,6 +52,9 @@ test("routes generation and scoring through the local Python backend", async () 
   assert.match(page, /127\.0\.0\.1:1234/);
   assert.match(page, /generateTailoredResume/);
   assert.match(page, /scoreTailoredResume/);
+  assert.match(page, /aria-haspopup="dialog"/);
+  assert.match(page, /role="dialog"/);
+  assert.match(page, /setHowOpen/);
   assert.match(page, /disabled=\{jobDescriptionLocked\}/);
   assert.doesNotMatch(page, /fetch\(`\$\{base\}\/api\/chat/);
   assert.match(backendClient, /127\.0\.0\.1:8000/);
